@@ -30,3 +30,8 @@ GREETING_TEXT = "Hello Sir, how can I help you today!"
 USE_SERIAL = False
 SERIAL_PORT = "COM3"
 SERIAL_BAUD_RATE = 9600
+
+# ──────────────────────────────────────────────
+#  Speech Recognition
+# ──────────────────────────────────────────────
+SPEECH_LANGUAGE = "en-US"
