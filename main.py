@@ -3,8 +3,8 @@ main.py — Entry point for the Voice-Reactive Sphere Assistant.
 
 Full pipeline:
   1. Detect voice → sphere LISTENING, buffer audio
-  2. Silence for 2s → sphere THINKING, transcribe audio
-  3. Generate response → sphere SPEAKING, speak reply via TTS
+  2. Silence for 2s → sphere THINKING, transcribe audio (faster-whisper)
+  3. Generate response → sphere SPEAKING, speak reply (Piper TTS)
   4. Done → sphere STANDBY
 """
 
@@ -19,16 +19,33 @@ from audio_detector import detect_audio_level, is_voice_detected
 from movement_controller import start_movement, stop_movement
 from speech_listener import SpeechListener
 from response_engine import generate_response
+from tts_engine import PiperTTS
 from sphere_renderer import (
     SphereRenderer,
     STATE_STANDBY, STATE_LISTENING, STATE_THINKING, STATE_SPEAKING,
 )
 
+# ── One-time model loading ────────────────────────────────────────────
+# Models are heavy — load them ONCE here, not inside any loop or callback.
+
+print("  ⏳  Loading Whisper model (this may take a moment on first run)…")
+from faster_whisper import WhisperModel
+
+_whisper_model = WhisperModel(
+    config.WHISPER_MODEL_SIZE,
+    device=config.WHISPER_DEVICE,
+    compute_type=config.WHISPER_COMPUTE_TYPE,
+)
+print(f"  ✅  Whisper '{config.WHISPER_MODEL_SIZE}' loaded on {config.WHISPER_DEVICE}")
+
+# Initialise the TTS engine (validates piper.exe + model at startup)
+_tts = PiperTTS(config.PIPER_EXE_PATH, config.PIPER_MODEL_PATH)
+
 # ── Shared state ──────────────────────────────────────────────────────
 _lock             = threading.Lock()
 _voice_active     = False
 _last_voice_time  = 0.0
-_speech_listener  = SpeechListener()
+_speech_listener  = SpeechListener(_whisper_model)  # inject pre-loaded model
 _processing       = False      # True while thinking/speaking (ignore new audio)
 
 
@@ -68,20 +85,6 @@ def _audio_callback(indata: np.ndarray, frames: int,
         start_movement()
 
 
-# ── TTS helper ────────────────────────────────────────────────────────
-
-def _speak(text: str) -> None:
-    """Speak text using pyttsx3 (blocking)."""
-    try:
-        import pyttsx3
-        engine = pyttsx3.init()
-        engine.setProperty("rate", 160)
-        engine.say(text)
-        engine.runAndWait()
-    except Exception as exc:
-        print(f"⚠️  TTS error: {exc}", file=sys.stderr)
-
-
 # ── Response pipeline (runs in a thread) ──────────────────────────────
 
 def _process_speech(renderer: SphereRenderer) -> None:
@@ -107,7 +110,7 @@ def _process_speech(renderer: SphereRenderer) -> None:
         # --- SPEAKING ---
         renderer.set_state(STATE_SPEAKING)
         renderer.show_response(reply)
-        _speak(reply)
+        _tts.speak(reply)                # ← Piper TTS (or pyttsx3 fallback)
     else:
         print("  ❓  Couldn't recognise speech.")
 
@@ -128,6 +131,7 @@ def main() -> None:
     print(f"  Threshold    : {config.VOLUME_THRESHOLD}")
     print(f"  Silence delay: {config.SILENCE_DELAY}s")
     print(f"  Sample rate  : {config.SAMPLE_RATE} Hz")
+    print(f"  Whisper model: {config.WHISPER_MODEL_SIZE} ({config.WHISPER_DEVICE})")
     print(f"  Serial       : {'Enabled' if config.USE_SERIAL else 'Disabled'}")
     print("-" * 55)
     print("  Speak into your microphone — Parker will respond!")
@@ -138,7 +142,7 @@ def main() -> None:
     # Startup greeting
     renderer.show_greeting(config.GREETING_TEXT)
     print(f"  🗣️  {config.GREETING_TEXT}\n")
-    greeting_thread = threading.Thread(target=_speak,
+    greeting_thread = threading.Thread(target=_tts.speak,
                                        args=(config.GREETING_TEXT,),
                                        daemon=True)
     greeting_thread.start()

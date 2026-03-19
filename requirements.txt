@@ -2,5 +2,5 @@ sounddevice
 numpy
 pyserial
 pygame
+faster-whisper
 pyttsx3
-SpeechRecognition

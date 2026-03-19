@@ -2,24 +2,36 @@
 speech_listener.py — Audio buffering and speech-to-text transcription.
 
 Buffers raw audio frames while the user speaks.  After silence is detected,
-converts the buffer to WAV and sends it to Google Speech Recognition.
+converts the buffer to a temporary WAV file and transcribes it using
+faster-whisper (fully local, no internet required).
 """
 
 import io
 import wave
 import numpy as np
-import speech_recognition as sr
 
 import config
 
 
 class SpeechListener:
-    """Collects audio frames and transcribes them."""
+    """
+    Collects audio frames and transcribes them using a pre-loaded
+    faster-whisper model.
 
-    def __init__(self):
-        self._recognizer = sr.Recognizer()
+    Parameters
+    ----------
+    whisper_model : faster_whisper.WhisperModel
+        A model instance created **once** at application startup.
+        Passed in so the heavy model load happens only once.
+    """
+
+    def __init__(self, whisper_model):
+        # Store the pre-loaded model (no reloading per transcription)
+        self._model = whisper_model
         self._buffer: list[np.ndarray] = []
         self._is_buffering = False
+
+    # ── Buffering controls ────────────────────────────────────────
 
     def start_buffering(self) -> None:
         """Begin collecting audio frames (call when voice starts)."""
@@ -44,44 +56,47 @@ class SpeechListener:
     def has_audio(self) -> bool:
         return len(self._buffer) > 0
 
+    # ── Transcription ─────────────────────────────────────────────
+
     def transcribe(self) -> str:
         """
-        Convert the buffered audio to text using Google Speech Recognition.
+        Convert the buffered audio to text using faster-whisper.
 
         Returns the transcribed string, or "" if recognition failed.
         """
         if not self._buffer:
             return ""
 
-        # Concatenate all buffered frames into one array
+        # 1. Concatenate all buffered frames into one contiguous array
         audio = np.concatenate(self._buffer, axis=0)
         self._buffer.clear()
 
-        # Convert float32 [-1, 1] → int16
+        # 2. Convert float32 [-1, 1] → int16 PCM for WAV encoding
         audio_int16 = (audio * 32767).astype(np.int16)
 
-        # Write to an in-memory WAV file
+        # 3. Write to an in-memory WAV file
         wav_io = io.BytesIO()
         with wave.open(wav_io, "wb") as wf:
             wf.setnchannels(1)
-            wf.setsampwidth(2)  # 16-bit
+            wf.setsampwidth(2)                # 16-bit
             wf.setframerate(config.SAMPLE_RATE)
             wf.writeframes(audio_int16.tobytes())
         wav_io.seek(0)
 
-        # Feed to speech_recognition
+        # 4. Transcribe with faster-whisper
+        #    - beam_size=1 for maximum speed (greedy decoding)
+        #    - language="en" to skip language detection overhead
         try:
-            with sr.AudioFile(wav_io) as source:
-                audio_data = self._recognizer.record(source)
-            text = self._recognizer.recognize_google(
-                audio_data, language=config.SPEECH_LANGUAGE
+            segments, _info = self._model.transcribe(
+                wav_io,
+                beam_size=1,
+                language="en",
+                vad_filter=True,       # skip silence segments
             )
+            # Collect all segment texts into one string
+            text = " ".join(seg.text.strip() for seg in segments)
             return text.strip()
-        except sr.UnknownValueError:
-            return ""
-        except sr.RequestError as e:
-            print(f"⚠️  Speech Recognition API error: {e}")
-            return ""
+
         except Exception as e:
             print(f"⚠️  Transcription error: {e}")
             return ""
