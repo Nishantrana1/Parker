@@ -17,7 +17,7 @@ SAMPLE_RATE = 16000
 BLOCK_SIZE = 1024
 
 # How many seconds of silence to wait before transitioning to idle.
-SILENCE_DELAY = 2.0
+SILENCE_DELAY = 1.0
 
 # ──────────────────────────────────────────────
 #  Greeting
@@ -53,7 +53,7 @@ import os as _os
 _PROJECT_DIR = _os.path.dirname(_os.path.abspath(__file__))
 
 # Path to the Piper executable (Windows pre-compiled binary).
-PIPER_EXE_PATH = _os.path.join(_PROJECT_DIR, "piper", "piper.exe")
+PIPER_EXE_PATH = _os.path.join(_PROJECT_DIR, "piper", "piper", "piper.exe")
 
-# Path to the ONNX voice model file.
-PIPER_MODEL_PATH = _os.path.join(_PROJECT_DIR, "piper", "en_US-amy-high.onnx")
+# Path to the ONNX voice model file. (UPDATED TO MEDIUM)
+PIPER_MODEL_PATH = _os.path.join(_PROJECT_DIR, "piper", "en_US-amy-medium.onnx")

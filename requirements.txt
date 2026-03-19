@@ -3,4 +3,3 @@ numpy
 pyserial
 pygame
 faster-whisper
-pyttsx3

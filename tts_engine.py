@@ -42,27 +42,24 @@ class PiperTTS:
         if self._available:
             print(f"  ✅  Piper TTS ready  (voice: {os.path.basename(model_path)})")
         else:
-            print("  ⚠️  Piper TTS not found — falling back to pyttsx3")
+            print("  ❌  Piper TTS not found! Please check the paths in config.py")
             if not os.path.isfile(self._exe_path):
                 print(f"       Missing: {self._exe_path}")
             if not os.path.isfile(self._model_path):
                 print(f"       Missing: {self._model_path}")
+            raise RuntimeError("Piper TTS executable or voice model not found.")
 
     # ── Public API ────────────────────────────────────────────────
 
     def speak(self, text: str) -> None:
         """
-        Speak the given text aloud.
-
-        Uses Piper TTS if available, otherwise falls back to pyttsx3.
+        Speak the given text aloud using Piper TTS.
         """
         if not text:
             return
 
         if self._available:
             self._speak_piper(text)
-        else:
-            self._speak_pyttsx3(text)
 
     # ── Piper implementation ──────────────────────────────────────
 
@@ -91,18 +88,17 @@ class PiperTTS:
 
             if proc.returncode != 0:
                 stderr_msg = proc.stderr.decode("utf-8", errors="replace")
-                print(f"  ⚠️  Piper error: {stderr_msg}", file=sys.stderr)
-                self._speak_pyttsx3(text)  # fallback
+                print(f"  ❌  Piper error: {stderr_msg}", file=sys.stderr)
                 return
 
             raw_pcm = proc.stdout
             if not raw_pcm:
-                print("  ⚠️  Piper returned empty audio", file=sys.stderr)
+                print("  ❌  Piper returned empty audio", file=sys.stderr)
                 return
 
             # --output-raw gives signed 16-bit LE mono PCM at the
-            # model's native sample rate (22050 Hz for high-quality models).
-            sample_rate = 22050  # Piper high-quality models use 22050 Hz
+            # model's native sample rate (22050 Hz for medium/high quality models).
+            sample_rate = 22050
 
             # Convert raw bytes → float32 numpy array for sounddevice
             samples = np.frombuffer(raw_pcm, dtype=np.int16).astype(np.float32)
@@ -113,21 +109,6 @@ class PiperTTS:
             sd.wait()
 
         except subprocess.TimeoutExpired:
-            print("  ⚠️  Piper TTS timed out", file=sys.stderr)
+            print("  ❌  Piper TTS timed out", file=sys.stderr)
         except Exception as exc:
-            print(f"  ⚠️  Piper TTS error: {exc}", file=sys.stderr)
-            self._speak_pyttsx3(text)  # fallback
-
-    # ── Fallback implementation ───────────────────────────────────
-
-    @staticmethod
-    def _speak_pyttsx3(text: str) -> None:
-        """Fallback TTS using pyttsx3 (in case Piper is not set up)."""
-        try:
-            import pyttsx3
-            engine = pyttsx3.init()
-            engine.setProperty("rate", 160)
-            engine.say(text)
-            engine.runAndWait()
-        except Exception as exc:
-            print(f"  ⚠️  pyttsx3 fallback error: {exc}", file=sys.stderr)
+            print(f"  ❌  Piper TTS error: {exc}", file=sys.stderr)
